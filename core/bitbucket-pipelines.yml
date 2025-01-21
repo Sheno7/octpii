@@ -1,0 +1,70 @@
+image: php:8.2-fpm
+
+pipelines:
+  branches:
+    testing:
+      - step:
+          name: Build and Deploy to Testing
+          script:
+            # Install system dependencies required for Laravel (if needed)
+            - apt-get update && apt-get install -y libpng-dev libonig-dev libxml2-dev zip unzip
+
+            # Configure PHP extensions
+            # - docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd
+
+            # Install Composer
+            # - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+            # Install project dependencies
+            # - composer install --prefer-dist --no-scripts --optimize-autoloader
+
+            # Add additional build steps for your project here...
+            # - cp .env.testing .env
+
+            # Prepare the application for deployment
+            # - php artisan key:generate
+            # - php artisan config:cache
+            # - php artisan route:cache
+            # - php artisan view:cache
+
+            - echo "Archiving the project..."
+            - zip -r testing_octopii_api.zip . && echo "Zipping completed successfully."
+            - ls -l testing_octopii_api.zip && echo "Zip file exists and is ready for upload."
+            - mkdir builds && mv testing_octopii_api.zip builds/
+
+            - echo "Uploading to S3..."
+            - pipe: atlassian/aws-s3-deploy:1.6.0
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                S3_BUCKET: "octopii/builds"
+                LOCAL_PATH: "builds"
+
+            - echo "Uploading via CodeDeploy..."
+            - pipe: atlassian/aws-code-deploy:1.5.0
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                APPLICATION_NAME: "Octopii"
+                DEPLOYMENT_GROUP: "OctopiiDeploymentGroup"
+                S3_BUCKET: "octopii/builds"
+                COMMAND: "upload"
+                ZIP_FILE: "testing_octopii_api.zip"
+
+            - echo "Deploying via CodeDeploy..."
+            - pipe: atlassian/aws-code-deploy:1.5.0
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                APPLICATION_NAME: "Octopii"
+                DEPLOYMENT_GROUP: "OctopiiDeploymentGroup"
+                S3_BUCKET: "octopii/builds"
+                COMMAND: "deploy"
+                ZIP_FILE: "testing_octopii_api.zip"
+                IGNORE_APPLICATION_STOP_FAILURES: "true"
+                FILE_EXISTS_BEHAVIOR: "OVERWRITE"
+          artifacts:
+            - testing_octopii_api.zip
